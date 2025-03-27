@@ -27,9 +27,17 @@ from openai import AsyncOpenAI
 from core.authentication import AuthenticationHelper
 from text import nonewlines
 
+"""
+Base class and utilities for implementing different approaches to document search and QA.
+Provides core functionality for working with Azure Cognitive Search and OpenAI.
+"""
 
 @dataclass
 class Document:
+    """
+    Represents a document with its metadata, content and embeddings.
+    Used for storing search results and document information.
+    """
     id: Optional[str]
     content: Optional[str]
     embedding: Optional[List[float]]
@@ -44,6 +52,10 @@ class Document:
     reranker_score: Optional[float] = None
 
     def serialize_for_results(self) -> dict[str, Any]:
+        """
+        Converts the document into a dictionary format suitable for API responses.
+        Includes trimmed embeddings and formatted captions.
+        """
         return {
             "id": self.id,
             "content": self.content,
@@ -91,6 +103,10 @@ class ThoughtStep:
 
 
 class Approach(ABC):
+    """
+    Abstract base class for implementing different search and QA approaches.
+    Provides common functionality for working with Azure Cognitive Search and OpenAI.
+    """
     def __init__(
         self,
         search_client: SearchClient,
@@ -118,6 +134,16 @@ class Approach(ABC):
         self.vision_token_provider = vision_token_provider
 
     def build_filter(self, overrides: dict[str, Any], auth_claims: dict[str, Any]) -> Optional[str]:
+        """
+        Builds a search filter string based on category exclusions and security settings.
+        
+        Args:
+            overrides: Dictionary of search parameter overrides
+            auth_claims: Authentication claims for security filtering
+            
+        Returns:
+            Optional filter string for Azure Search
+        """
         exclude_category = overrides.get("exclude_category")
         security_filter = self.auth_helper.build_security_filters(overrides, auth_claims)
         filters = []
@@ -138,6 +164,22 @@ class Approach(ABC):
         minimum_search_score: Optional[float],
         minimum_reranker_score: Optional[float],
     ) -> List[Document]:
+        """
+        Performs a search against Azure Cognitive Search with the given parameters.
+        
+        Args:
+            top: Number of results to return
+            query_text: Text to search for
+            filter: Filter string
+            vectors: List of vector queries for vector search
+            use_semantic_ranker: Whether to use semantic ranking
+            use_semantic_captions: Whether to use semantic captions
+            minimum_search_score: Minimum required search score
+            minimum_reranker_score: Minimum required reranker score
+            
+        Returns:
+            List of matching Document objects
+        """
         # Use semantic ranker if requested and if retrieval mode is text or hybrid (vectors + text)
         if use_semantic_ranker and query_text:
             results = await self.search_client.search(
@@ -216,6 +258,15 @@ class Approach(ABC):
             return sourcepage
 
     async def compute_text_embedding(self, q: str):
+        """
+        Computes text embeddings using OpenAI's embedding models.
+        
+        Args:
+            q: Text to embed
+            
+        Returns:
+            VectorizedQuery object containing the embedding
+        """
         SUPPORTED_DIMENSIONS_MODEL = {
             "text-embedding-ada-002": False,
             "text-embedding-3-small": True,
@@ -238,6 +289,15 @@ class Approach(ABC):
         return VectorizedQuery(vector=query_vector, k_nearest_neighbors=50, fields="embedding")
 
     async def compute_image_embedding(self, q: str):
+        """
+        Computes image embeddings using Azure Computer Vision.
+        
+        Args:
+            q: Text to embed
+            
+        Returns:
+            VectorizedQuery object containing the image embedding
+        """
         endpoint = urljoin(self.vision_endpoint, "computervision/retrieval:vectorizeText")
         headers = {"Content-Type": "application/json"}
         params = {"api-version": "2023-02-01-preview", "modelVersion": "latest"}
